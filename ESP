@@ -689,15 +689,7 @@ end
 
 -- game specific functions
 function EspInterface.getWeapon(player)
-    local character = EspInterface.getCharacter(player)
-    if character then
-        for _, item in ipairs(character:GetChildren()) do
-            if item:IsA("Tool") then
-                return item.Name
-            end
-        end
-    end
-    return "None"
+	return "Unknown";
 end
 
 function EspInterface.isFriendly(player)
