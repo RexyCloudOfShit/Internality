@@ -1,0 +1,180 @@
+-- services
+local runService = game:GetService("RunService")
+local players = game:GetService("Players")
+local workspace = game:GetService("Workspace")
+
+-- variables
+local localPlayer = players.LocalPlayer
+local camera = workspace.CurrentCamera
+local viewportSize = camera.ViewportSize
+
+-- locals
+local atan2 = math.atan2
+local sin = math.sin
+local cos = math.cos
+local clear = table.clear
+
+-- methods
+local wtvp = camera.WorldToViewportPoint
+local findFirstChild = workspace.FindFirstChild
+local toOrientation = CFrame.identity.ToOrientation
+local pointToObjectSpace = CFrame.identity.PointToObjectSpace
+
+-- esp object
+local EspObject = {}
+EspObject.__index = EspObject
+
+function EspObject.new(player, interface)
+    local self = setmetatable({}, EspObject)
+    self.player = player
+    self.interface = interface
+    self:Construct()
+    return self
+end
+
+function EspObject:Construct()
+    self.bin = {}
+    self.drawings = {
+        arrowOutline = Drawing.new("Triangle"),
+        arrow = Drawing.new("Triangle")
+    }
+    
+    -- Initial setup
+    self.drawings.arrowOutline.Thickness = 3
+    self.drawings.arrowOutline.Visible = false
+    self.drawings.arrow.Filled = true
+    self.drawings.arrow.Visible = false
+    
+    self.bin[1] = self.drawings.arrowOutline
+    self.bin[2] = self.drawings.arrow
+
+    self.renderConnection = runService.Heartbeat:Connect(function()
+        self:Update()
+        self:Render()
+    end)
+end
+
+function EspObject:Destruct()
+    self.renderConnection:Disconnect()
+    for _, drawing in pairs(self.bin) do
+        drawing:Remove()
+    end
+    clear(self)
+end
+
+function EspObject:Update()
+    self.character = self.interface.getCharacter(self.player)
+    self.enabled = self.interface.enabled and self.character
+    
+    local head = self.enabled and findFirstChild(self.character, "Head")
+    if not head then return end
+
+    local _, onScreen = wtvp(camera, head.Position)
+    self.onScreen = onScreen
+
+    if not self.onScreen and self.interface.offScreenArrow then
+        local _, yaw, roll = toOrientation(camera.CFrame)
+        local flatCFrame = CFrame.Angles(0, yaw, roll) + camera.CFrame.Position
+        local objectSpace = pointToObjectSpace(flatCFrame, head.Position)
+        local angle = atan2(objectSpace.Z, objectSpace.X)
+        self.direction = Vector2.new(cos(angle), sin(angle))
+    end
+end
+
+function EspObject:Render()
+    local interface = self.interface
+    
+    self.drawings.arrow.Visible = self.enabled and (not self.onScreen) and interface.offScreenArrow
+    self.drawings.arrowOutline.Visible = self.drawings.arrow.Visible and interface.offScreenArrowOutline
+    
+    if self.drawings.arrow.Visible then
+        local center = viewportSize / 2
+        local arrowPos = center + (self.direction * interface.offScreenArrowRadius)
+        
+        -- Clamp arrow position within screen bounds
+        arrowPos = Vector2.new(
+            math.clamp(arrowPos.X, 25, viewportSize.X - 25),
+            math.clamp(arrowPos.Y, 25, viewportSize.Y - 25)
+        )
+        
+        self.drawings.arrow.PointA = arrowPos
+        self.drawings.arrow.PointB = arrowPos - rotateVector(self.direction, 0.45) * interface.offScreenArrowSize
+        self.drawings.arrow.PointC = arrowPos - rotateVector(self.direction, -0.45) * interface.offScreenArrowSize
+        self.drawings.arrow.Color = interface.offScreenArrowColor[1]
+        self.drawings.arrow.Transparency = interface.offScreenArrowColor[2]
+
+        self.drawings.arrowOutline.PointA = self.drawings.arrow.PointA
+        self.drawings.arrowOutline.PointB = self.drawings.arrow.PointB
+        self.drawings.arrowOutline.PointC = self.drawings.arrow.PointC
+        self.drawings.arrowOutline.Color = interface.offScreenArrowOutlineColor[1]
+        self.drawings.arrowOutline.Transparency = interface.offScreenArrowOutlineColor[2]
+    end
+end
+
+local function rotateVector(vector, radians)
+    local c, s = cos(radians), sin(radians)
+    return Vector2.new(c*vector.X - s*vector.Y, s*vector.X + c*vector.Y)
+end
+
+-- Main ESP module
+local OffscreenArrows = {
+    _hasLoaded = false,
+    _objectCache = {},
+    
+    -- Configuration
+    enabled = false,
+    offScreenArrow = true,
+    offScreenArrowColor = {Color3.new(1, 0, 0), 1}, -- Red color by default
+    offScreenArrowSize = 15,
+    offScreenArrowRadius = 150,
+    offScreenArrowOutline = true,
+    offScreenArrowOutlineColor = {Color3.new(), 1}, -- Black outline by default
+    maxDistance = 150,
+    limitDistance = false
+}
+
+function OffscreenArrows.Load()
+    if OffscreenArrows._hasLoaded then return end
+
+    local function createObject(player)
+        if player ~= localPlayer then
+            OffscreenArrows._objectCache[player] = EspObject.new(player, OffscreenArrows)
+        end
+    end
+
+    local function removeObject(player)
+        local object = OffscreenArrows._objectCache[player]
+        if object then
+            object:Destruct()
+            OffscreenArrows._objectCache[player] = nil
+        end
+    end
+
+    for _, player in ipairs(players:GetPlayers()) do
+        createObject(player)
+    end
+
+    OffscreenArrows.playerAdded = players.PlayerAdded:Connect(createObject)
+    OffscreenArrows.playerRemoving = players.PlayerRemoving:Connect(removeObject)
+    OffscreenArrows._hasLoaded = true
+end
+
+function OffscreenArrows.Unload()
+    if not OffscreenArrows._hasLoaded then return end
+
+    for player, object in pairs(OffscreenArrows._objectCache) do
+        object:Destruct()
+    end
+
+    OffscreenArrows.playerAdded:Disconnect()
+    OffscreenArrows.playerRemoving:Disconnect()
+    clear(OffscreenArrows._objectCache)
+    OffscreenArrows._hasLoaded = false
+end
+
+-- Default function to get character
+function OffscreenArrows.getCharacter(player)
+    return player.Character
+end
+
+return OffscreenArrows
