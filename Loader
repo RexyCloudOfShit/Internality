@@ -1,0 +1,24 @@
+if identifyexecutor() == "Xeno" then
+    print("Crashing Game")
+    while true do end
+end
+if identifyexecutor() == "AWP" or identifyexecutor() == "Wave" or identifyexecutor() == "Swift" then
+    print("Executor Supported")
+    if game.GameId == 4777055365 then
+    print("Loading Rost Script | Premium")
+    else
+        print("Game Not Supported")
+        print("Game Id: " .. game.GameId)
+        game.Players.LocalPlayer:Kick("GAME NOT SUPPORTED")
+    end
+
+
+
+
+
+
+
+
+else
+game.Players.LocalPlayer:Kick("EXECUTOR NOT SUPPORTED DM REXY IF YOU BELIVE THIS IS AN ERROR")
+end
